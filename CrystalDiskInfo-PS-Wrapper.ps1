@@ -1,13 +1,13 @@
 Clear-Host
 
-$sendAlertOnPass = $true
+$sendAlertOnPass = $false
 $setNinjaSmartStatus = $true
 $enableVersionCheck = $true
-$predictiveFailureEvent = $true
+$predictiveFailureEvent = $false
 
 $desiredVersion = "CrystalDiskInfo 9.2.3"
 $webhookUrl = "Your webhook URL here"
-$CrystalUrl = "CrystalDiskInfo EXE Installer URL Here"
+$CrystalUrl = "Your CrystalDiskInfo .exe installer URL here"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -77,16 +77,43 @@ function Install-CrystalDiskInfo {
         $installerUrl
     )
 
-    $installerPath = "C:\temp\CrystalDiskInfoInstaller.exe"
+    $Timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+    $installerPath = "C:\temp\CrystalDiskInfoInstaller_$Timestamp.exe"
 
-    try {
-        Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
-        Write-Host "CrystalDiskInfo installer downloaded successfully."
-    } catch {
-        Write-Error "Failed to download CrystalDiskInfo installer. Error: $_"
+    $maxRetries = 3
+    $retryCount = 0
+    $success = $false
+
+    while ($retryCount -lt $maxRetries -and -not $success) {
+        try {
+            if (Test-Path -Path $installerPath) {
+                Remove-Item -Path $installerPath -Force
+                Write-Host "Removed existing installer."
+            }
+
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+            Write-Host "CrystalDiskInfo installer downloaded successfully."
+            Start-Sleep -Seconds 5
+            $success = $true
+        } catch {
+            Write-Error "Failed to download CrystalDiskInfo installer. Error: $_"
+            if ($_.Exception.Message -match "being used by another process") {
+                Write-Host "Installer file is being used by another process. Retrying..."
+                Start-Sleep -Seconds 5
+                $retryCount++
+            } else {
+                Stop-Transcript
+                exit 1
+            }
+        }
+    }
+
+    if (-not $success) {
+        Write-Error "Failed to download installer after multiple retries."
         Stop-Transcript
         exit 1
     }
+
     try {
         Start-Process -FilePath $installerPath -ArgumentList "/VERYSILENT /NORESTART" -NoNewWindow -Wait
         Start-Sleep -Seconds 10
@@ -109,7 +136,7 @@ function Check-CrystalDiskInfoVersion {
         $versionLine = $diskInfoContent | Select-String -Pattern $desiredVersion
 
         if ($versionLine -ne $null) {
-            Write-Host "CrystalDiskInfo version is correct: $desiredVersion."
+            Write-Host "CrystalDiskInfo version is correct: $desiredVersion"
             return $true
         } else {
             Write-Host "CrystalDiskInfo version is incorrect. Expected: $desiredVersion."
@@ -170,7 +197,7 @@ $diskInfoExePath = "$($Env:ProgramFiles)\CrystalDiskInfo\DiskInfo64.exe"
 $diskInfoFilePath = "$($Env:ProgramFiles)\CrystalDiskInfo\DiskInfo.txt"
 
 if ($enableVersionCheck) {
-    Write-Host "Version check enabled. Verifying CrystalDiskInfo version."
+    Write-Host "Version check enabled. Verifying $desiredVersion"
     if (!(Test-Path -Path $diskInfoExePath) -or !(Test-Path -Path $diskInfoFilePath) -or !(Check-CrystalDiskInfoVersion -filePath $diskInfoFilePath -desiredVersion $desiredVersion)) {
         Write-Host "CrystalDiskInfo version is incorrect or missing. Reinstalling."
         if (Test-Path -Path "C:\Program Files\CrystalDiskInfo") {
@@ -219,11 +246,11 @@ if (Test-Path -Path $diskInfoExePath) {
     $hostname = $env:COMPUTERNAME
 
     if ($badCount -gt 0) {
-        $smartstatus = 'Bad'
+        $smartstatus = 'bad'
     } elseif ($cautionCount -gt 0) {
-        $smartstatus = 'Caution'
+        $smartstatus = 'caution'
     } else {
-        $smartstatus = 'Good'
+        $smartstatus = 'good'
     }
 
     if ($setNinjaSmartStatus) {
@@ -234,7 +261,7 @@ if (Test-Path -Path $diskInfoExePath) {
     if ($predictiveFailureDetected -and $predictiveFailureEvent) {
         Write-Host "Predictive failure detected. Logging event."
         $eventTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-        $predictiveFailureMessage = "EventId: 2094, EventTime: $eventTime, Source: Server Administrator, Message: Predictive Failure reported by CrystalDiskInfo-PS-Wrapper."
+        $predictiveFailureMessage = "EventId: 2094, EventTime: $eventTime, Source: Server Administrator, Message: Predictive Failure reported by CrystalDiskInfo."
         Log-PredictiveFailureEvent -message $predictiveFailureMessage
     }
 
