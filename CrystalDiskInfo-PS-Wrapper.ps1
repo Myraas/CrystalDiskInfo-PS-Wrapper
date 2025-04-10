@@ -85,7 +85,6 @@ function Stop-CrystalDiskInfo {
                     $_ | Stop-Process -Force
                     Write-Host "Successfully stopped process $($_.Name) (PID: $($_.Id))"
                 }
-                # Add a small delay to ensure process is fully terminated
                 Start-Sleep -Seconds 2
             } catch {
                 Write-Error "Failed to stop process $processName. Error: $_"
@@ -93,7 +92,6 @@ function Stop-CrystalDiskInfo {
         }
     }
     
-    # Double-check if any processes are still running
     $stillRunning = $false
     foreach ($processName in $processes) {
         if (Get-Process -Name $processName -ErrorAction SilentlyContinue) {
@@ -234,7 +232,6 @@ if ($enableVersionCheck) {
     if (!(Test-Path -Path $diskInfoExePath) -or !(Test-Path -Path $diskInfoFilePath) -or !(Check-CrystalDiskInfoVersion -filePath $diskInfoFilePath -desiredVersion $desiredVersion)) {
         Write-Host "CrystalDiskInfo version is incorrect or missing. Reinstalling."
         
-        # Stop any running CrystalDiskInfo processes before reinstalling
         $processesStopped = Stop-CrystalDiskInfo
         if (!$processesStopped) {
             Write-Warning "Could not stop all CrystalDiskInfo processes. Attempting to continue anyway."
@@ -250,7 +247,6 @@ if ($enableVersionCheck) {
 
 Write-Host "Checking if CrystalDiskInfo executable exists."
 if (Test-Path -Path $diskInfoExePath) {
-    # Ensure no running instances before attempting to run
     Stop-CrystalDiskInfo | Out-Null
     
     Write-Host "Running CrystalDiskInfo to generate SMART report."
