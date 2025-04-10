@@ -72,6 +72,39 @@ function Set-NinjaSmartStatus {
     }
 }
 
+function Stop-CrystalDiskInfo {
+    Write-Host "Checking for running CrystalDiskInfo processes..."
+    $processes = @("DiskInfo", "DiskInfo32", "DiskInfo64", "CrystalDiskInfo")
+    
+    foreach ($processName in $processes) {
+        $runningProcesses = Get-Process -Name $processName -ErrorAction SilentlyContinue
+        if ($runningProcesses) {
+            Write-Host "Found running process: $processName. Attempting to close..."
+            try {
+                $runningProcesses | ForEach-Object {
+                    $_ | Stop-Process -Force
+                    Write-Host "Successfully stopped process $($_.Name) (PID: $($_.Id))"
+                }
+                # Add a small delay to ensure process is fully terminated
+                Start-Sleep -Seconds 2
+            } catch {
+                Write-Error "Failed to stop process $processName. Error: $_"
+            }
+        }
+    }
+    
+    # Double-check if any processes are still running
+    $stillRunning = $false
+    foreach ($processName in $processes) {
+        if (Get-Process -Name $processName -ErrorAction SilentlyContinue) {
+            $stillRunning = $true
+            Write-Error "Process $processName is still running. Unable to terminate."
+        }
+    }
+    
+    return !$stillRunning
+}
+
 function Install-CrystalDiskInfo {
     param (
         $installerUrl
@@ -200,6 +233,13 @@ if ($enableVersionCheck) {
     Write-Host "Version check enabled. Verifying $desiredVersion"
     if (!(Test-Path -Path $diskInfoExePath) -or !(Test-Path -Path $diskInfoFilePath) -or !(Check-CrystalDiskInfoVersion -filePath $diskInfoFilePath -desiredVersion $desiredVersion)) {
         Write-Host "CrystalDiskInfo version is incorrect or missing. Reinstalling."
+        
+        # Stop any running CrystalDiskInfo processes before reinstalling
+        $processesStopped = Stop-CrystalDiskInfo
+        if (!$processesStopped) {
+            Write-Warning "Could not stop all CrystalDiskInfo processes. Attempting to continue anyway."
+        }
+        
         if (Test-Path -Path "C:\Program Files\CrystalDiskInfo") {
             Remove-Item -Path "C:\Program Files\CrystalDiskInfo" -Recurse -Force
             Write-Host "Removed existing CrystalDiskInfo installation."
@@ -210,6 +250,9 @@ if ($enableVersionCheck) {
 
 Write-Host "Checking if CrystalDiskInfo executable exists."
 if (Test-Path -Path $diskInfoExePath) {
+    # Ensure no running instances before attempting to run
+    Stop-CrystalDiskInfo | Out-Null
+    
     Write-Host "Running CrystalDiskInfo to generate SMART report."
     try {
         Start-Process $diskInfoExePath -ArgumentList "/CopyExit" -Wait
